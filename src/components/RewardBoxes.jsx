@@ -13,27 +13,29 @@ const REWARD_LABELS = {
 };
 
 export default function RewardBoxes() {
-    const { state, dispatch } = useGame();
+    const { state, pickBox, requestNextQuestion, go } = useGame();
     const [picked, setPicked] = useState(null);
     const [revealed, setRevealed] = useState(false);
+    const [reward, setReward] = useState(null);
 
-    const reward = state.currentReward;
     const rewardInfo = REWARD_LABELS[reward] || REWARD_LABELS['nothing'];
 
-    // Assign reward to one random box, others get decoy
-    const [winnerIdx] = useState(() => Math.floor(Math.random() * 3));
-
-    const handlePick = (idx) => {
+    const handlePick = async (idx) => {
         if (picked !== null) return;
         setPicked(idx);
+
+        // Ask server for the reward
+        const res = await pickBox();
+        setReward(res.reward);
         setRevealed(true);
 
         setTimeout(() => {
-            if (reward === 'hack') {
-                dispatch({ type: 'SETUP_HACK' });
+            if (res.reward === 'hack') {
+                // GameContext already dispatched HACK_SETUP, screen will change
             } else {
-                dispatch({ type: 'APPLY_REWARD', payload: { reward } });
-                dispatch({ type: 'UNLOCK_NEXT_QUESTION' });
+                // Advance to next question and go back to game
+                requestNextQuestion();
+                go('game');
             }
         }, 2000);
     };
@@ -47,7 +49,6 @@ export default function RewardBoxes() {
                 {/* Boxes */}
                 <div className="flex justify-center gap-4 sm:gap-6 mb-10">
                     {[0, 1, 2].map((idx) => {
-                        const isWinner = idx === winnerIdx;
                         const isPicked = picked === idx;
                         const isOpen = revealed;
 
@@ -59,9 +60,7 @@ export default function RewardBoxes() {
                                 className={`relative w-24 h-28 sm:w-32 sm:h-36 rounded-lg border-2 transition-all duration-500
                            cursor-pointer disabled:cursor-not-allowed flex flex-col items-center justify-center gap-2
                            ${isPicked && isOpen
-                                        ? isWinner
-                                            ? 'border-neon bg-neon/10 scale-110'
-                                            : 'border-gray-600 bg-gray-800/50 scale-95 opacity-50'
+                                        ? 'border-neon bg-neon/10 scale-110'
                                         : !isOpen
                                             ? 'border-dark-border bg-dark-card hover:border-neon/40 hover:bg-dark-hover hover:scale-105'
                                             : idx !== picked
@@ -69,7 +68,7 @@ export default function RewardBoxes() {
                                                 : 'border-neon bg-neon/10 scale-110'
                                     }`}
                             >
-                                {isPicked && isOpen ? (
+                                {isPicked && isOpen && reward ? (
                                     <div className="animate-scale-in">
                                         <span className="text-3xl">{rewardInfo.icon}</span>
                                         <div className={`text-xs font-bold mt-1 ${rewardInfo.color}`}>
@@ -90,7 +89,7 @@ export default function RewardBoxes() {
                 </div>
 
                 {/* Result message */}
-                {revealed && (
+                {revealed && reward && (
                     <div className="animate-fade-in">
                         <div className={`text-lg font-bold ${rewardInfo.color}`}>
                             {reward === 'hack' ? '☠ HACK MODE ACTIVATED' : rewardInfo.text === 'EMPTY' ? 'Nothing this time...' : `You got ${rewardInfo.text}!`}

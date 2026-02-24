@@ -16,6 +16,7 @@ function ScreenRouter() {
     case 'home': return <HomeScreen />;
     case 'create': return <CreateGame />;
     case 'join': return <JoinGame />;
+    case 'join_success': return <JoinGame />;
     case 'lobby': return <Lobby />;
     case 'game': return <GameScreen />;
     case 'reward': return <RewardBoxes />;

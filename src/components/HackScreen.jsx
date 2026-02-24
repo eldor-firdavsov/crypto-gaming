@@ -2,27 +2,30 @@ import { useState } from 'react';
 import { useGame } from '../context/GameContext';
 
 export default function HackScreen() {
-    const { state, dispatch } = useGame();
+    const { state, attemptHack, requestNextQuestion, go } = useGame();
     const [selected, setSelected] = useState(null);
-    const [result, setResult] = useState(null); // 'success' | 'fail'
+    const [result, setResult] = useState(null); // { success, stolen }
 
     const target = state.hackTarget;
     const options = state.hackOptions;
+    const targetId = state.hackTargetId;
 
     if (!target) return null;
 
-    const stolenAmount = Math.floor(target.bitcoin * 0.5);
-
-    const handleGuess = (password) => {
+    const handleGuess = async (password) => {
         if (selected !== null) return;
         setSelected(password);
-        const correct = password === target.password;
-        setResult(correct ? 'success' : 'fail');
+
+        const res = await attemptHack(targetId, password);
+        setResult(res);
 
         setTimeout(() => {
-            dispatch({ type: 'HACK_ATTEMPT', payload: { guessedPassword: password } });
+            requestNextQuestion();
+            go('game');
         }, 2500);
     };
+
+    const stolenAmount = result?.stolen || Math.floor(target.bitcoin * 0.5);
 
     return (
         <div className="min-h-screen flex flex-col items-center justify-center p-6 animate-fade-in">
@@ -47,7 +50,7 @@ export default function HackScreen() {
                         </div>
                     </div>
                     <div className="text-xs text-red-400/60 border-t border-dark-border pt-2">
-                        50% steal on success → <span className="text-red-400 font-bold">₿ {stolenAmount}</span>
+                        50% steal on success → <span className="text-red-400 font-bold">₿ {Math.floor(target.bitcoin * 0.5)}</span>
                     </div>
                 </div>
 
@@ -56,10 +59,10 @@ export default function HackScreen() {
                     <div className="text-xs text-gray-600 uppercase tracking-wider mb-2">guess_password:</div>
                     {options.map((pwd, idx) => {
                         let cls = 'border-dark-border bg-dark/80 text-gray-300 hover:border-red-500/40 hover:bg-dark-hover';
-                        if (selected !== null) {
-                            if (pwd === target.password) {
+                        if (result !== null && selected !== null) {
+                            if (result.success && pwd === selected) {
                                 cls = 'border-neon/50 bg-neon/10 text-neon';
-                            } else if (pwd === selected) {
+                            } else if (!result.success && pwd === selected) {
                                 cls = 'border-red-500/50 bg-red-500/10 text-red-400';
                             } else {
                                 cls = 'border-dark-border bg-dark/30 text-gray-700';
@@ -84,10 +87,10 @@ export default function HackScreen() {
                 {/* Result */}
                 {result && (
                     <div className="mt-6 text-center animate-scale-in">
-                        {result === 'success' ? (
+                        {result.success ? (
                             <>
                                 <div className="text-neon text-lg font-bold glow-text">ACCESS GRANTED</div>
-                                <div className="text-sm text-neon/70 mt-1">+₿ {stolenAmount} stolen!</div>
+                                <div className="text-sm text-neon/70 mt-1">+₿ {result.stolen} stolen!</div>
                             </>
                         ) : (
                             <>

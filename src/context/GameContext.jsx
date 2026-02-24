@@ -1,243 +1,157 @@
 import { createContext, useContext, useReducer, useCallback, useRef, useEffect } from 'react';
-import questions from '../data/questions';
+import { io } from 'socket.io-client';
 
 const GameContext = createContext(null);
 
-/* ── Helpers ──────────────────────────────────────── */
-const genCode = () => {
-    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-    return Array.from({ length: 6 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
-};
+const SERVER_URL = 'http://localhost:3001';
 
-const genPassword = () => {
-    const words = ['alpha', 'bravo', 'cyber', 'delta', 'echo', 'flux', 'ghost', 'hex', 'ion', 'jade', 'krypto', 'lambda', 'matrix', 'nexus', 'omega', 'pixel', 'quantum', 'rogue', 'sigma', 'tesla', 'ultra', 'vortex', 'warp', 'xenon', 'yield', 'zero'];
-    return words[Math.floor(Math.random() * words.length)] + Math.floor(100 + Math.random() * 900);
-};
-
-const genId = () => Math.random().toString(36).slice(2, 10);
-
-const shuffleArray = (arr) => {
-    const a = [...arr];
-    for (let i = a.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [a[i], a[j]] = [a[j], a[i]];
-    }
-    return a;
-};
-
-/* ── BOT names ────────────────────────────────────── */
-const BOT_NAMES = ['CryptoKid', 'N3onByte', 'ZeroCool', 'Ph4ntom', 'DarkNode', 'ByteGhost', 'H4xMaster', 'NullPtr', 'Sh4dow', 'R00tKit'];
-
-/* ── Initial state ────────────────────────────────── */
+/* ── Local UI state ───────────────────────────────── */
 const initialState = {
-    screen: 'home',            // home | create | join | lobby | game | reward | hack | leaderboard | gameover
+    screen: 'home',
     gameCode: null,
-    hostId: null,
-    currentPlayerId: null,
-    players: [],               // { id, nickname, password, bitcoin, isHost, isBot, questionIndex }
-    duration: 3,               // minutes
-    timer: 0,                  // seconds left
+    playerId: null,
+    isHost: false,
+    players: [],
+    timer: 0,
+    duration: 3,
     gameStarted: false,
     gameOver: false,
-    questions: shuffleArray(questions),
-    // player-specific UI state
-    currentReward: null,
-    hackTarget: null,
-    hackOptions: [],
+    // Per-player UI state
+    currentQuestion: null,
     answerLocked: false,
     lastAnswerCorrect: null,
+    correctIndex: null,
+    currentReward: null,
+    myBitcoin: 0,
+    // Hack state
+    hackTarget: null,
+    hackOptions: [],
+    hackTargetId: null,
+    // Leaderboard
+    leaderboard: [],
+    // Password (shown once on join)
+    myPassword: null,
+    // Notification
+    notification: null,
 };
 
-/* ── Reducer ──────────────────────────────────────── */
-function gameReducer(state, action) {
+function uiReducer(state, action) {
     switch (action.type) {
         case 'SET_SCREEN':
             return { ...state, screen: action.payload };
 
-        case 'CREATE_GAME': {
-            const hostId = genId();
-            const code = genCode();
+        case 'GAME_CREATED':
             return {
                 ...state,
                 screen: 'lobby',
-                gameCode: code,
-                hostId,
-                currentPlayerId: hostId,
-                duration: action.payload.duration || 3,
-                timer: (action.payload.duration || 3) * 60,
-                players: [{
-                    id: hostId,
-                    nickname: 'HOST',
-                    password: null,
-                    bitcoin: 0,
-                    isHost: true,
-                    isBot: false,
-                    questionIndex: 0,
-                }],
+                gameCode: action.payload.gameCode,
+                playerId: action.payload.playerId,
+                isHost: true,
+                players: action.payload.players,
             };
-        }
 
-        case 'JOIN_GAME': {
-            const playerId = genId();
-            const password = genPassword();
+        case 'GAME_JOINED':
             return {
                 ...state,
-                screen: 'lobby',
-                currentPlayerId: playerId,
-                players: [
-                    ...state.players,
-                    {
-                        id: playerId,
-                        nickname: action.payload.nickname,
-                        password,
-                        bitcoin: 0,
-                        isHost: false,
-                        isBot: false,
-                        questionIndex: 0,
-                    },
-                ],
-            };
-        }
-
-        case 'ADD_BOTS': {
-            const botNames = shuffleArray(BOT_NAMES).slice(0, 3);
-            const bots = botNames.map(name => ({
-                id: genId(),
-                nickname: name,
-                password: genPassword(),
-                bitcoin: 0,
+                screen: 'join_success',
+                gameCode: action.payload.gameCode,
+                playerId: action.payload.playerId,
                 isHost: false,
-                isBot: true,
-                questionIndex: 0,
-            }));
-            return { ...state, players: [...state.players, ...bots] };
-        }
+                players: action.payload.players,
+                myPassword: action.payload.password,
+            };
 
-        case 'START_GAME':
+        case 'UPDATE_PLAYERS':
+            return { ...state, players: action.payload.players };
+
+        case 'GAME_STARTED':
             return {
                 ...state,
                 screen: 'game',
                 gameStarted: true,
-                timer: state.duration * 60,
-                questions: shuffleArray(questions),
+                timer: action.payload.timer,
+                players: action.payload.players,
+                gameOver: false,
             };
 
-        case 'TICK':
-            if (state.timer <= 1) {
-                return { ...state, timer: 0, gameOver: true, screen: 'gameover' };
-            }
-            return { ...state, timer: state.timer - 1 };
+        case 'TIMER_UPDATE':
+            return { ...state, timer: action.payload.timer };
 
-        case 'ANSWER_WRONG':
-            return { ...state, answerLocked: true, lastAnswerCorrect: false };
-
-        case 'ANSWER_CORRECT':
-            return { ...state, lastAnswerCorrect: true };
-
-        case 'UNLOCK_NEXT_QUESTION': {
-            const player = state.players.find(p => p.id === state.currentPlayerId);
-            if (!player) return state;
+        case 'SET_QUESTION':
             return {
                 ...state,
+                currentQuestion: action.payload,
                 answerLocked: false,
                 lastAnswerCorrect: null,
-                players: state.players.map(p =>
-                    p.id === state.currentPlayerId
-                        ? { ...p, questionIndex: p.questionIndex + 1 }
-                        : p
-                ),
+                correctIndex: null,
             };
-        }
+
+        case 'ANSWER_RESULT':
+            return {
+                ...state,
+                lastAnswerCorrect: action.payload.correct,
+                correctIndex: action.payload.correctIndex,
+                answerLocked: !action.payload.correct,
+            };
 
         case 'SET_REWARD':
-            return { ...state, screen: 'reward', currentReward: action.payload };
+            return { ...state, screen: 'reward', currentReward: action.payload.reward };
 
-        case 'APPLY_REWARD': {
-            const { reward } = action.payload;
+        case 'REWARD_APPLIED':
             return {
                 ...state,
-                players: state.players.map(p => {
-                    if (p.id !== state.currentPlayerId) return p;
-                    switch (reward) {
-                        case 'nothing': return p;
-                        case '+10': return { ...p, bitcoin: p.bitcoin + 10 };
-                        case '+20': return { ...p, bitcoin: p.bitcoin + 20 };
-                        case '+30': return { ...p, bitcoin: p.bitcoin + 30 };
-                        case '+50': return { ...p, bitcoin: p.bitcoin + 50 };
-                        case 'double': return { ...p, bitcoin: p.bitcoin * 2 };
-                        case 'triple': return { ...p, bitcoin: p.bitcoin * 3 };
-                        default: return p;
-                    }
-                }),
-                screen: reward === 'hack' ? 'hack' : 'game',
+                myBitcoin: action.payload.bitcoin,
                 currentReward: null,
-                answerLocked: false,
-                lastAnswerCorrect: null,
             };
-        }
 
-        case 'SETUP_HACK': {
-            const otherPlayers = state.players.filter(p => p.id !== state.currentPlayerId && !p.isHost);
-            if (otherPlayers.length === 0) return { ...state, screen: 'game', answerLocked: false, lastAnswerCorrect: null };
-            const target = otherPlayers[Math.floor(Math.random() * otherPlayers.length)];
-            const fakePasswords = [genPassword(), genPassword()];
-            const options = shuffleArray([target.password, ...fakePasswords]);
+        case 'HACK_SETUP':
             return {
                 ...state,
                 screen: 'hack',
-                hackTarget: target,
-                hackOptions: options,
+                hackTarget: {
+                    nickname: action.payload.targetNickname,
+                    bitcoin: action.payload.targetBitcoin,
+                },
+                hackTargetId: action.payload.targetId,
+                hackOptions: action.payload.options,
                 currentReward: null,
-                answerLocked: false,
-                lastAnswerCorrect: null,
             };
-        }
 
-        case 'HACK_ATTEMPT': {
-            const { guessedPassword } = action.payload;
-            const target = state.hackTarget;
-            if (!target) return { ...state, screen: 'game' };
-            const correct = guessedPassword === target.password;
-            if (!correct) {
-                return {
-                    ...state,
-                    screen: 'game',
-                    hackTarget: null,
-                    hackOptions: [],
-                    players: state.players.map(p =>
-                        p.id === state.currentPlayerId ? { ...p, questionIndex: p.questionIndex + 1 } : p
-                    ),
-                };
-            }
-            const stolen = Math.floor(target.bitcoin * 0.5);
+        case 'HACK_RESULT':
             return {
                 ...state,
-                screen: 'game',
+                myBitcoin: action.payload.bitcoin,
                 hackTarget: null,
                 hackOptions: [],
-                players: state.players.map(p => {
-                    if (p.id === state.currentPlayerId) return { ...p, bitcoin: p.bitcoin + stolen, questionIndex: p.questionIndex + 1 };
-                    if (p.id === target.id) return { ...p, bitcoin: p.bitcoin - stolen };
-                    return p;
-                }),
+                hackTargetId: null,
             };
-        }
 
-        case 'BOT_EARN': {
-            const { botId, amount } = action.payload;
+        case 'LEADERBOARD_UPDATE':
+            return { ...state, leaderboard: action.payload.leaderboard };
+
+        case 'UPDATE_BITCOIN':
+            return { ...state, myBitcoin: action.payload.bitcoin };
+
+        case 'GAME_OVER':
             return {
                 ...state,
-                players: state.players.map(p =>
-                    p.id === botId ? { ...p, bitcoin: p.bitcoin + amount } : p
-                ),
+                screen: 'gameover',
+                gameOver: true,
+                gameStarted: false,
+                leaderboard: action.payload.leaderboard,
             };
-        }
 
-        case 'END_GAME':
-            return { ...state, gameOver: true, screen: 'gameover' };
+        case 'SET_NOTIFICATION':
+            return { ...state, notification: action.payload };
+
+        case 'CLEAR_NOTIFICATION':
+            return { ...state, notification: null };
+
+        case 'ROOM_CLOSED':
+            return { ...initialState, notification: action.payload.reason };
 
         case 'RESET':
-            return { ...initialState, questions: shuffleArray(questions) };
+            return { ...initialState };
 
         default:
             return state;
@@ -246,37 +160,157 @@ function gameReducer(state, action) {
 
 /* ── Provider ─────────────────────────────────────── */
 export function GameProvider({ children }) {
-    const [state, dispatch] = useReducer(gameReducer, initialState);
-    const timerRef = useRef(null);
-    const botIntervalRef = useRef(null);
+    const [state, dispatch] = useReducer(uiReducer, initialState);
+    const socketRef = useRef(null);
 
-    // Timer
+    // Connect socket on mount
     useEffect(() => {
-        if (state.gameStarted && !state.gameOver) {
-            timerRef.current = setInterval(() => dispatch({ type: 'TICK' }), 1000);
-        }
-        return () => clearInterval(timerRef.current);
-    }, [state.gameStarted, state.gameOver]);
+        const socket = io(SERVER_URL, {
+            autoConnect: true,
+            reconnection: true,
+            reconnectionAttempts: 5,
+        });
+        socketRef.current = socket;
 
-    // Bot simulation
-    useEffect(() => {
-        if (state.gameStarted && !state.gameOver) {
-            botIntervalRef.current = setInterval(() => {
-                const bots = state.players.filter(p => p.isBot);
-                if (bots.length === 0) return;
-                const bot = bots[Math.floor(Math.random() * bots.length)];
-                const rewards = [0, 10, 20, 30, 50, 10, 20, 0];
-                const amount = rewards[Math.floor(Math.random() * rewards.length)];
-                dispatch({ type: 'BOT_EARN', payload: { botId: bot.id, amount } });
-            }, 4000 + Math.random() * 4000);
-        }
-        return () => clearInterval(botIntervalRef.current);
-    }, [state.gameStarted, state.gameOver, state.players]);
+        /* ── Server event listeners ────────────────── */
+        socket.on('player_joined', (data) => {
+            dispatch({ type: 'UPDATE_PLAYERS', payload: data });
+        });
+
+        socket.on('player_left', (data) => {
+            dispatch({ type: 'UPDATE_PLAYERS', payload: data });
+        });
+
+        socket.on('game_started', (data) => {
+            dispatch({ type: 'GAME_STARTED', payload: data });
+        });
+
+        socket.on('next_question', (q) => {
+            dispatch({ type: 'SET_QUESTION', payload: q });
+        });
+
+        socket.on('timer_update', (data) => {
+            dispatch({ type: 'TIMER_UPDATE', payload: data });
+        });
+
+        socket.on('leaderboard_update', (data) => {
+            dispatch({ type: 'LEADERBOARD_UPDATE', payload: data });
+        });
+
+        socket.on('game_over', (data) => {
+            dispatch({ type: 'GAME_OVER', payload: data });
+        });
+
+        socket.on('room_closed', (data) => {
+            dispatch({ type: 'ROOM_CLOSED', payload: data });
+        });
+
+        socket.on('you_were_hacked', (data) => {
+            dispatch({ type: 'UPDATE_BITCOIN', payload: { bitcoin: data.newBitcoin } });
+            dispatch({
+                type: 'SET_NOTIFICATION',
+                payload: `☠ ${data.attackerNickname} hacked you! Lost ₿${data.stolen}`,
+            });
+            setTimeout(() => dispatch({ type: 'CLEAR_NOTIFICATION' }), 4000);
+        });
+
+        socket.on('disconnect', () => {
+            console.log('[socket] disconnected');
+        });
+
+        return () => {
+            socket.disconnect();
+        };
+    }, []);
+
+    /* ─── Actions (emit to server) ──────────────────── */
+    const createGame = useCallback((duration) => {
+        socketRef.current?.emit('create_game', { duration }, (res) => {
+            if (res.success) {
+                dispatch({ type: 'GAME_CREATED', payload: { ...res, duration } });
+            }
+        });
+    }, []);
+
+    const joinGame = useCallback((gameCode, nickname) => {
+        return new Promise((resolve) => {
+            socketRef.current?.emit('join_game', { gameCode, nickname }, (res) => {
+                if (res.success) {
+                    dispatch({ type: 'GAME_JOINED', payload: { ...res, gameCode: gameCode.toUpperCase() } });
+                }
+                resolve(res);
+            });
+        });
+    }, []);
+
+    const startGame = useCallback(() => {
+        socketRef.current?.emit('start_game', {}, (res) => {
+            if (!res.success) console.error('Start failed:', res.error);
+        });
+    }, []);
+
+    const submitAnswer = useCallback((answerIndex) => {
+        return new Promise((resolve) => {
+            socketRef.current?.emit('submit_answer', { answerIndex }, (res) => {
+                dispatch({ type: 'ANSWER_RESULT', payload: res });
+                resolve(res);
+            });
+        });
+    }, []);
+
+    const requestNextQuestion = useCallback(() => {
+        socketRef.current?.emit('next_question_request', {}, () => { });
+    }, []);
+
+    const pickBox = useCallback(() => {
+        return new Promise((resolve) => {
+            socketRef.current?.emit('pick_box', {}, (res) => {
+                if (res.reward === 'hack' && res.hack) {
+                    dispatch({ type: 'HACK_SETUP', payload: res.hack });
+                } else {
+                    dispatch({ type: 'REWARD_APPLIED', payload: { bitcoin: res.bitcoin } });
+                }
+                resolve(res);
+            });
+        });
+    }, []);
+
+    const attemptHack = useCallback((targetId, guessedPassword) => {
+        return new Promise((resolve) => {
+            socketRef.current?.emit('hack_attempt', { targetId, guessedPassword }, (res) => {
+                dispatch({ type: 'HACK_RESULT', payload: res });
+                resolve(res);
+            });
+        });
+    }, []);
+
+    const getLeaderboard = useCallback(() => {
+        socketRef.current?.emit('get_leaderboard', {}, (res) => {
+            dispatch({ type: 'LEADERBOARD_UPDATE', payload: res });
+        });
+    }, []);
+
+    const getMyBitcoin = useCallback(() => {
+        socketRef.current?.emit('get_my_bitcoin', {}, (res) => {
+            dispatch({ type: 'UPDATE_BITCOIN', payload: res });
+        });
+    }, []);
 
     const go = useCallback((screen) => dispatch({ type: 'SET_SCREEN', payload: screen }), []);
+    const reset = useCallback(() => {
+        socketRef.current?.disconnect();
+        socketRef.current?.connect();
+        dispatch({ type: 'RESET' });
+    }, []);
 
     return (
-        <GameContext.Provider value={{ state, dispatch, go }}>
+        <GameContext.Provider value={{
+            state, dispatch, go,
+            createGame, joinGame, startGame,
+            submitAnswer, requestNextQuestion,
+            pickBox, attemptHack,
+            getLeaderboard, getMyBitcoin, reset,
+        }}>
             {children}
         </GameContext.Provider>
     );

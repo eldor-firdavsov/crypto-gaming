@@ -1,17 +1,8 @@
 import { useGame } from '../context/GameContext';
 
 export default function Lobby() {
-    const { state, dispatch } = useGame();
-    const isHost = state.currentPlayerId === state.hostId;
+    const { state, startGame } = useGame();
     const playerCount = state.players.filter(p => !p.isHost).length;
-
-    const handleStart = () => {
-        // Add bots if fewer than 3 non-host players
-        if (playerCount < 3) {
-            dispatch({ type: 'ADD_BOTS' });
-        }
-        setTimeout(() => dispatch({ type: 'START_GAME' }), 100);
-    };
 
     return (
         <div className="min-h-screen flex flex-col items-center justify-center p-6 animate-fade-in">
@@ -28,6 +19,7 @@ export default function Lobby() {
                             {state.gameCode}
                         </span>
                     </div>
+                    <p className="text-xs text-gray-600 mt-2">Share this code with other players</p>
                 </div>
 
                 {/* Players List */}
@@ -38,42 +30,50 @@ export default function Lobby() {
                     </div>
 
                     <div className="space-y-2">
-                        {state.players.map((player, i) => (
-                            <div
-                                key={player.id}
-                                className="flex items-center gap-3 px-3 py-2.5 bg-dark/50 rounded-md border border-dark-border"
-                                style={{ animationDelay: `${i * 0.1}s` }}
-                            >
-                                <span className="w-2 h-2 rounded-full bg-neon animate-pulse" />
-                                <span className="text-sm text-gray-300 flex-1">{player.nickname}</span>
-                                {player.isHost && (
-                                    <span className="text-[10px] bg-neon/10 text-neon px-2 py-0.5 rounded uppercase tracking-wider">
-                                        host
-                                    </span>
-                                )}
-                                {player.id === state.currentPlayerId && !player.isHost && (
-                                    <span className="text-[10px] bg-white/5 text-gray-500 px-2 py-0.5 rounded uppercase tracking-wider">
-                                        you
-                                    </span>
-                                )}
-                            </div>
-                        ))}
+                        {state.players.length === 0 ? (
+                            <div className="text-center py-6 text-gray-600 text-sm">Waiting for players...</div>
+                        ) : (
+                            state.players.map((player, i) => (
+                                <div
+                                    key={player.id}
+                                    className="flex items-center gap-3 px-3 py-2.5 bg-dark/50 rounded-md border border-dark-border animate-fade-in"
+                                    style={{ animationDelay: `${i * 0.1}s` }}
+                                >
+                                    <span className="w-2 h-2 rounded-full bg-neon animate-pulse" />
+                                    <span className="text-sm text-gray-300 flex-1">{player.nickname}</span>
+                                    {player.isHost && (
+                                        <span className="text-[10px] bg-neon/10 text-neon px-2 py-0.5 rounded uppercase tracking-wider">
+                                            host
+                                        </span>
+                                    )}
+                                    {player.id === state.playerId && !player.isHost && (
+                                        <span className="text-[10px] bg-white/5 text-gray-500 px-2 py-0.5 rounded uppercase tracking-wider">
+                                            you
+                                        </span>
+                                    )}
+                                </div>
+                            ))
+                        )}
                     </div>
                 </div>
 
                 {/* Host Controls */}
-                {isHost ? (
+                {state.isHost ? (
                     <div className="space-y-3">
                         <button
-                            onClick={handleStart}
-                            className="w-full py-4 bg-neon text-dark font-bold rounded-md text-lg
-                         hover:bg-neon-dim transition-all duration-200
-                         active:scale-[0.98] cursor-pointer tracking-wide animate-pulse-neon"
+                            onClick={startGame}
+                            disabled={playerCount === 0}
+                            className={`w-full py-4 font-bold rounded-md text-lg transition-all duration-200
+                         active:scale-[0.98] cursor-pointer tracking-wide
+                         ${playerCount === 0
+                                    ? 'bg-gray-800 text-gray-600 border border-dark-border cursor-not-allowed'
+                                    : 'bg-neon text-dark hover:bg-neon-dim animate-pulse-neon'
+                                }`}
                         >
                             ▶ START_GAME
                         </button>
                         <p className="text-[11px] text-gray-600 text-center">
-                            {playerCount === 0 ? 'Bots will be added automatically' : `${playerCount} player(s) ready`}
+                            {playerCount === 0 ? 'Waiting for at least 1 player to join...' : `${playerCount} player(s) ready`}
                         </p>
                     </div>
                 ) : (

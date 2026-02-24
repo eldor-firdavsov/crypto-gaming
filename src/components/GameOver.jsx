@@ -1,11 +1,8 @@
 import { useGame } from '../context/GameContext';
 
 export default function GameOver() {
-    const { state, dispatch } = useGame();
-    const sorted = [...state.players]
-        .filter(p => !p.isHost)
-        .sort((a, b) => b.bitcoin - a.bitcoin);
-
+    const { state, reset } = useGame();
+    const sorted = state.leaderboard;
     const winner = sorted[0];
 
     return (
@@ -41,8 +38,7 @@ export default function GameOver() {
                                         {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `#${i + 1}`}
                                     </span>
                                     <span className="text-sm text-gray-300">{p.nickname}</span>
-                                    {p.isBot && <span className="text-[9px] text-gray-700">[BOT]</span>}
-                                    {p.id === state.currentPlayerId && (
+                                    {p.id === state.playerId && (
                                         <span className="text-[9px] bg-neon/10 text-neon px-1.5 py-0.5 rounded">YOU</span>
                                     )}
                                 </div>
@@ -54,7 +50,7 @@ export default function GameOver() {
 
                 {/* Reset */}
                 <button
-                    onClick={() => dispatch({ type: 'RESET' })}
+                    onClick={reset}
                     className="w-full py-3.5 bg-neon text-dark font-bold rounded-md
                      hover:bg-neon-dim transition-all duration-200
                      active:scale-[0.98] cursor-pointer tracking-wide"

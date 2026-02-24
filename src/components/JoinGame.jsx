@@ -2,43 +2,37 @@ import { useState } from 'react';
 import { useGame } from '../context/GameContext';
 
 export default function JoinGame() {
-    const { state, dispatch, go } = useGame();
+    const { state, joinGame, go } = useGame();
     const [code, setCode] = useState('');
     const [nickname, setNickname] = useState('');
     const [error, setError] = useState('');
-    const [generatedPassword, setGeneratedPassword] = useState(null);
+    const [loading, setLoading] = useState(false);
 
-    const handleJoin = () => {
+    const handleJoin = async () => {
         setError('');
         const upperCode = code.trim().toUpperCase();
-
         if (!upperCode) { setError('Enter a game code'); return; }
         if (!nickname.trim()) { setError('Enter a nickname'); return; }
 
-        // Check if a game exists with this code
-        if (state.gameCode && state.gameCode === upperCode) {
-            dispatch({ type: 'JOIN_GAME', payload: { nickname: nickname.trim() } });
-        } else {
-            setError('Game not found. Invalid code.');
+        setLoading(true);
+        const res = await joinGame(upperCode, nickname.trim());
+        setLoading(false);
+
+        if (!res.success) {
+            setError(res.error || 'Failed to join game');
         }
+        // On success, GameContext dispatches GAME_JOINED -> screen becomes 'join_success'
     };
 
-    // After joining, find the player to show password
-    const joinedPlayer = state.players.find(p => p.id === state.currentPlayerId && !p.isHost);
-
-    if (joinedPlayer && state.screen === 'lobby') {
-        return null; // Will be rendered by Lobby
-    }
-
-    // Show password screen after joining but before moving on
-    if (generatedPassword) {
+    // Show password screen after successful join
+    if (state.screen === 'join_success' && state.myPassword) {
         return (
             <div className="min-h-screen flex flex-col items-center justify-center p-6 animate-fade-in">
                 <div className="max-w-md w-full bg-dark-card border border-dark-border rounded-lg p-6 glow-box">
                     <h2 className="text-lg text-neon glow-text mb-4 font-bold">// Access Granted</h2>
                     <div className="bg-dark border border-neon/20 rounded p-4 mb-4">
                         <div className="text-[10px] text-gray-600 uppercase tracking-wider mb-2">your secret password</div>
-                        <div className="text-2xl text-neon font-bold tracking-wider text-center">{generatedPassword}</div>
+                        <div className="text-2xl text-neon font-bold tracking-wider text-center">{state.myPassword}</div>
                     </div>
                     <p className="text-xs text-red-400/80 mb-4">⚠ Save this. Shown only once. Others may try to hack you.</p>
                     <button
@@ -101,26 +95,14 @@ export default function JoinGame() {
                         )}
 
                         <button
-                            onClick={() => {
-                                setError('');
-                                const upperCode = code.trim().toUpperCase();
-                                if (!upperCode) { setError('Enter a game code'); return; }
-                                if (!nickname.trim()) { setError('Enter a nickname'); return; }
-                                if (state.gameCode && state.gameCode === upperCode) {
-                                    dispatch({ type: 'JOIN_GAME', payload: { nickname: nickname.trim() } });
-                                    // Grab the password from the newly added player
-                                    setTimeout(() => {
-                                        setGeneratedPassword(null); // We'll read from state on next render
-                                    }, 0);
-                                } else {
-                                    setError('Game not found. Invalid code.');
-                                }
-                            }}
+                            onClick={handleJoin}
+                            disabled={loading}
                             className="w-full py-3.5 bg-neon text-dark font-bold rounded-md
                          hover:bg-neon-dim transition-all duration-200
-                         active:scale-[0.98] cursor-pointer tracking-wide"
+                         active:scale-[0.98] cursor-pointer tracking-wide
+                         disabled:opacity-50 disabled:cursor-not-allowed"
                         >
-                            CONNECT →
+                            {loading ? 'CONNECTING...' : 'CONNECT →'}
                         </button>
                     </div>
                 </div>

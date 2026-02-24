@@ -1,11 +1,13 @@
+import { useEffect } from 'react';
 import { useGame } from '../context/GameContext';
 import Timer from './Timer';
 
 export default function Leaderboard() {
-    const { state, go } = useGame();
-    const sorted = [...state.players]
-        .filter(p => !p.isHost)
-        .sort((a, b) => b.bitcoin - a.bitcoin);
+    const { state, go, getLeaderboard } = useGame();
+
+    useEffect(() => {
+        getLeaderboard();
+    }, [getLeaderboard]);
 
     return (
         <div className="min-h-screen flex flex-col p-6 animate-fade-in">
@@ -20,7 +22,7 @@ export default function Leaderboard() {
                 </div>
 
                 <div className="space-y-2">
-                    {sorted.map((p, i) => {
+                    {state.leaderboard.map((p, i) => {
                         const isTop = i < 3;
                         const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : '';
                         const borderCls =
@@ -34,7 +36,6 @@ export default function Leaderboard() {
                                 key={p.id}
                                 className={`flex items-center justify-between px-4 py-3.5 rounded-lg border transition-all ${borderCls}
                            ${i === 0 && state.gameOver ? 'animate-pulse-neon' : ''}`}
-                                style={{ animationDelay: `${i * 0.05}s` }}
                             >
                                 <div className="flex items-center gap-3">
                                     <span className={`text-sm font-bold w-6 ${i === 0 ? 'text-neon' : i === 1 ? 'text-yellow-400' : i === 2 ? 'text-orange-400' : 'text-gray-600'
@@ -42,8 +43,7 @@ export default function Leaderboard() {
                                         {isTop ? medal : `#${i + 1}`}
                                     </span>
                                     <span className="text-sm text-gray-300">{p.nickname}</span>
-                                    {p.isBot && <span className="text-[9px] text-gray-700">[BOT]</span>}
-                                    {p.id === state.currentPlayerId && (
+                                    {p.id === state.playerId && (
                                         <span className="text-[9px] bg-neon/10 text-neon px-1.5 py-0.5 rounded">YOU</span>
                                     )}
                                 </div>

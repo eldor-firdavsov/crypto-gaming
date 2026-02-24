@@ -2,12 +2,8 @@ import { useState } from 'react';
 import { useGame } from '../context/GameContext';
 
 export default function CreateGame() {
-    const { dispatch, go } = useGame();
+    const { createGame, go } = useGame();
     const [duration, setDuration] = useState(3);
-
-    const handleCreate = () => {
-        dispatch({ type: 'CREATE_GAME', payload: { duration } });
-    };
 
     return (
         <div className="min-h-screen flex flex-col items-center justify-center p-6 animate-fade-in">
@@ -27,7 +23,6 @@ export default function CreateGame() {
                     </h2>
 
                     <div className="space-y-6">
-                        {/* Duration */}
                         <div>
                             <label className="block text-xs text-gray-500 uppercase tracking-wider mb-2">
                                 game_duration (minutes)
@@ -49,7 +44,6 @@ export default function CreateGame() {
                             </div>
                         </div>
 
-                        {/* Host info */}
                         <div className="bg-dark/50 border border-dark-border rounded p-3">
                             <div className="text-[10px] text-gray-600 uppercase tracking-wider mb-1.5">host privileges</div>
                             <ul className="text-xs text-gray-400 space-y-1">
@@ -60,7 +54,7 @@ export default function CreateGame() {
                         </div>
 
                         <button
-                            onClick={handleCreate}
+                            onClick={() => createGame(duration)}
                             className="w-full py-3.5 bg-neon text-dark font-bold rounded-md
                          hover:bg-neon-dim transition-all duration-200
                          active:scale-[0.98] cursor-pointer tracking-wide"
